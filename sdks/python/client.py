@@ -59,8 +59,6 @@ class Map:
         (x, y) = position
         results = [(x+1, y), (x, y-1), (x-1, y), (x, y+1)]
         if (x + y) % 2 == 0: results.reverse() # aesthetics
-        results = filter(self.in_bounds, results)
-        results = filter(self.passable, results)
         return results
 
     def heuristic(self, a, b):
@@ -83,21 +81,31 @@ class Map:
             if current == goal:
                 break
             
-            for next in graph.neighbors(current):
+            for n in self.neighbors(current):
                 # Check if neighbor position is passable
-                if (self.grid[next[0]][next[1]] != -1):
+                if (self.grid[n[0]][n[1]] == -3):
+                    print("CONTINUING")
                     continue
                 new_cost = cost_so_far[current] + 1
-                if next not in cost_so_far or new_cost < cost_so_far[next]:
-                    cost_so_far[next] = new_cost
-                    priority = new_cost + heuristic(goal, next)
-                    frontier.put(next, priority)
-                    came_from[next] = current
+                if n not in cost_so_far or new_cost < cost_so_far[n]:
+                    cost_so_far[n] = new_cost
+                    priority = new_cost + self.heuristic(goal, n)
+                    frontier.put(n, priority)
+                    came_from[n] = current
         
+        print( len(came_from) )
+        for i in came_from:
+            print(i)
         current = goal
         path = [current]
         while current != start:
+            print("BEFORE PROBLEM")
             current = came_from[current]
+            if current == start:
+                break
+            print("AFTER PROBLEM")
+            print("Current is: ", current)
+            print("Came from current is: ", came_from[current])
             direction = self.get_direction(current, came_from[current])
             path.append(current)
         path.append(start)
@@ -105,13 +113,15 @@ class Map:
         return path
 
     def get_direction(self, start, goal):
-        if (start[0] == goal[0]):
-            if (goal[1] > start[0]):
+        (startx, starty) = start
+        (goalx, goaly)   = goal
+        if (startx == goalx):
+            if (goaly > startx):
                 return "S"
             else:
                 return "N"
         else:
-            if (goal[0] > start[0]):
+            if (goalx > startx):
                 return "E"
             else:
                 return "W"
@@ -177,7 +187,15 @@ class Game:
         self.update_map(json_data)
         self.move_workers(json_data)
         self.create_units(json_data)
+        # ==================
     
+    def get_nearest_id(self):
+        nearest = self.nearest_id
+        for resource in self.map.resources:
+            dist = len(self.map.path( (0, 0), self.map.resources[resource] ) ) 
+            if (nearest == -1) or (nearest > dist):
+                nearest = dist
+        self.nearest_id = nearest
 
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -198,6 +216,7 @@ class Game:
                 resource_id = -1
                 if( update_tile["resources"] != None ):
                     resource_id = update_tile["resources"]["id"]
+                    self.get_nearest_id()
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
         #self.map.print_map_data()        
 
@@ -206,32 +225,46 @@ class Game:
         resources = self.map.get_resources()
 
         # get list of workers (from json) 
-        workers = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker'])
-        print("\n\n\n\n\n\n\n")
-        print("Workers: ", workers)
+        #workers = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker'])
+        #self.workers |= workers # add any additional ids we encounter
+        for i in range(len(json_data['unit_updates'])):
+            if (json_data['unit_updates'][i]['type'] == "worker"):
+                worker = json_data['unit_updates'][i]['id']
+                print("Worker: ", worker)
+                can_attack = json_data['unit_updates'][i]['can_attack']
+                x = json_data['unit_updates'][i]['x']
+                y = json_data['unit_updates'][i]['y']
+                if self.nearest_id == -1:
+                    # Move randomly 
+                    print("MOVING RANDOMLY ================")
+                    direction = random.choice(self.directions)
+                    self.commands.put( {"command": "MOVE", "unit": worker, "dir": direction} )
+                    #self.commands.put('"command":"MOVE", "unit":' + str(worker) + ', "dir": "' + str(direction) + '"')
+                    continue
+                print("FOUND PATH")
+                if worker not in self.worker_info:
+                    worker_info[worker] = (False, self.map.path( (x, y), resources[self.nearest_id]))  # (target_resource, returning_to_base, path)
+                (returning, path) = worker_info[worker]
+                if( not returning ):
+                    # send worker to resource
+                    next_dir = path.pop(0)
+                    if (len(path) == 0):
+                        # Gather
+                        self.commands.put( {"command": "GATHER", "unit": worker, "dir": next_dir} )
+                        #self.commands.put('command: "GATHER", unit: { worker }, dir: { next_dir }')
+                        # Update list to return 
+                        new_path = self.map.path( (x, y), (0, 0) )
+                        worker_info[worker] = (True, new_path)
+                    else:
+                        # Move 
+                        self.commands.put( {"command": "MOVE", "unit": worker, "dir": next_dir} )
+                        #self.commands.put('command: "MOVE", unit: { worker }, dir: { next_dir }')
 
-        self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
 
-        for worker in self.workers:
-            #worker is a tuple (assignment, returning)
-            if worker not in self.worker_info:
-                worker_info[worker] = (False, self.map.path( (worker[x], worker[y]), resources[self.nearest_id]))  # (target_resource, returning_to_base, path)
-            (returning, path) = worker_info[worker]
-            if( not returning ):
-                # send worker to resource
-                next_dir = path.pop(0)
-                if (len(path) == 0):
-                    # Gather
-                    self.commands.push('command: "GATHER", unit: { worker }, dir: { next_dir }')
-                    # Update list to return 
-                    new_path = self.map.path( (worker[x], worker[y]), (0, 0) )
-                    worker_info[worker] = (True, new_path)
-                else:
-                    # Move 
-                    self.commands.push('command: "MOVE", unit: { worker }, dir: { next_dir }')
-
+        #worker is a tuple (assignment, returning)
+            
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
@@ -243,29 +276,31 @@ class Game:
         num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'scout']))
         
         # get queue of units to create
-        create_queue = Queue()
+        create_queue = queue.Queue()
         while (num_workers < 6):
-            create_queue.push("worker")
+            create_queue.put("worker")
             num_workers += 1
-        while (num_scouts < 2):
-            create_queue.push("scout")
-            num_scouts += 1
         while (num_tanks < 3):
-            create_queue.push("tank")
+            create_queue.put("tank")
             num_tanks += 1
         while (num_workers < 9):
-            create_queue.push("worker")
+            create_queue.put("worker")
             num_workers += 1
             
         # send that queue to the server
-        self.commands.push("command: \"CREATE\", type: \"" + create_queue.pop() + "\"")
-            
+        self.commands.put( {"command": "CREATE", "type": create_queue.get()})
+
     def get_commands(self):
         commands = []
-        while(not(self.commands.empty())):
-            commands.append({commands.pop()})
-        command = {"commands": commands}
-        response = json.dumps(command, separators=(',',':')) + '\n'
+        while (not self.commands.empty()):
+            commands.append(self.commands.get())
+        #for command in self.commands:
+        #    commands.append(command)
+        #while(not(self.commands.empty())):
+        #    commands.append() += "{" + self.commands.get() + "},"
+        final = {"commands": commands}
+        #print(commands)
+        response = json.dumps(final, separators=(',',':')) + '\n'
         return response
     
     def update_tanks(self, json_data):
@@ -282,7 +317,7 @@ class Game:
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
-    host = '127.0.0.1'
+    host = '0.0.0.0'
 
     server = ss.TCPServer((host, port), NetworkHandler)
     print("listening on {}:{}".format(host, port))
