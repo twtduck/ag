@@ -102,14 +102,14 @@ class Map:
         path.reverse()
         return path
 
-    def get_direction(self, from, to):
-        if (from[0] == to[0]):
-            if (to[1] > from[0]):
+    def get_direction(self, start, goal):
+        if (start[0] == goal[0]):
+            if (goal[1] > start[0]):
                 return "S"
             else:
                 return "N"
         else:
-            if (to[0] > from[0]):
+            if (goal[0] > start[0]):
                 return "E"
             else:
                 return "W"
