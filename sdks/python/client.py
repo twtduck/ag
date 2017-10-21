@@ -4,6 +4,7 @@ import sys
 import json
 import random
 import heapq
+import queue
 
 if (sys.version_info > (3, 0)):
     print("Python 3.X detected")
@@ -144,6 +145,7 @@ class Game:
         self.first_turn = True
         self.workers = set() # set of unique worker ids
         self.worker_info = {}
+        self.commands = Queue()
 
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -176,13 +178,14 @@ class Game:
         self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
-        for(resource_id in resources):
-            for(worker in worker_info):
+        for resource_id in resources:
+            for worker in worker_info:
                 #worker is a tuple (assignment, returning)
                 assignment = worker[0]
                 returning = worker[1]
                 if( assignment == resource_id and not( returning )):
                     # send worker to resource
+                    pass
 
                     
                 
@@ -190,7 +193,37 @@ class Game:
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
-    
+    def create_units(self, json_data):
+        # get list of existing units, and count their types
+        num_workers = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
+        num_tanks = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'tank']))
+        num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
+        
+        # get queue of units to create
+        create_queue = Queue()
+        while (num_workers < 6):
+            create_queue.push("worker")
+            num_workers += 1
+        while (num_scouts < 2):
+            create_queue.push("scout")
+            num_scouts += 1
+        while (num_tanks < 3):
+            create_queue.push("tank")
+            num_tanks += 1
+        while (num_workers < 9):
+            create_queue.push("worker")
+            num_workers += 1
+            
+        # send that queue to the server
+        self.commands.push("command: \"CREATE\", type: \"" + create_queue.pop() + "\"")
+            
+    def get_commands(self):
+        commands = []
+        while(not(self.commands.empty())):
+            commands.append({commands.pop()})
+        command = {"commands": commands}
+        response = json.dumps(command, separators=(',',':')) + '\n'
+        return response
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
