@@ -4,6 +4,7 @@ import sys
 import json
 import random
 import heapq
+import queue
 
 if (sys.version_info > (3, 0)):
     print("Python 3.X detected")
@@ -95,20 +96,23 @@ class Map:
         path = [current]
         while current != start:
             current = came_from[current]
+            direction = self.get_direction(current, came_from[current])
             path.append(current)
         path.append(start)
         path.reverse()
         return path
 
-def reconstruct_path(came_from, start, goal):
-    current = goal
-    path = [current]
-    while current != start:
-        current = came_from[current]
-        path.append(current)
-    path.append(start) # optional
-    path.reverse() # optional
-    return path
+    def get_direction(self, from, to):
+        if (from[0] == to[0]):
+            if (to[1] > from[0]):
+                return "S"
+            else:
+                return "N"
+        else:
+            if (to[0] > from[0]):
+                return "E"
+            else:
+                return "W"
 
     def add_tile(self, tilex, tiley, blocked, resource, enemies):
         state = -2
@@ -144,6 +148,7 @@ class Game:
         self.first_turn = True
         self.workers = set() # set of unique worker ids
         self.worker_info = {}
+        self.commands = Queue()
 
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -176,21 +181,48 @@ class Game:
         self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
-        for(resource_id in resources):
-            for(worker in worker_info):
+        for resource_id in resources:
+            for worker in worker_info:
                 #worker is a tuple (assignment, returning)
                 assignment = worker[0]
                 returning = worker[1]
                 if( assignment == resource_id and not( returning )):
                     # send worker to resource
-
-                    
-                
-
+                    pass
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
-    
+    def create_units(self, json_data):
+        # get list of existing units, and count their types
+        num_workers = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
+        num_tanks = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'tank']))
+        num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
+        
+        # get queue of units to create
+        create_queue = Queue()
+        while (num_workers < 6):
+            create_queue.push("worker")
+            num_workers += 1
+        while (num_scouts < 2):
+            create_queue.push("scout")
+            num_scouts += 1
+        while (num_tanks < 3):
+            create_queue.push("tank")
+            num_tanks += 1
+        while (num_workers < 9):
+            create_queue.push("worker")
+            num_workers += 1
+            
+        # send that queue to the server
+        self.commands.push("command: \"CREATE\", type: \"" + create_queue.pop() + "\"")
+            
+    def get_commands(self):
+        commands = []
+        while(not(self.commands.empty())):
+            commands.append({commands.pop()})
+        command = {"commands": commands}
+        response = json.dumps(command, separators=(',',':')) + '\n'
+        return response
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
