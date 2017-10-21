@@ -95,20 +95,23 @@ class Map:
         path = [current]
         while current != start:
             current = came_from[current]
+            direction = self.get_direction(current, came_from[current])
             path.append(current)
         path.append(start)
         path.reverse()
         return path
 
-def reconstruct_path(came_from, start, goal):
-    current = goal
-    path = [current]
-    while current != start:
-        current = came_from[current]
-        path.append(current)
-    path.append(start) # optional
-    path.reverse() # optional
-    return path
+    def get_direction(self, from, to):
+        if (from[0] == to[0]):
+            if (to[1] > from[0]):
+                return "S"
+            else:
+                return "N"
+        else:
+            if (to[0] > from[0]):
+                return "E"
+            else:
+                return "W"
 
     def add_tile(self, tilex, tiley, blocked, resource, enemies):
         state = -2
@@ -183,10 +186,7 @@ class Game:
                 returning = worker[1]
                 if( assignment == resource_id and not( returning )):
                     # send worker to resource
-
-                    
-                
-
+                    pass
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
