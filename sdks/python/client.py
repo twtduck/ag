@@ -28,7 +28,7 @@ class NetworkHandler(ss.StreamRequestHandler):
             #response = game.get_random_move(json_data).encode()
             response = game.get_commands().encode()
             self.wfile.write(response)
-
+            
 class PriorityQueue:
     def __init__(self):
         self.elements = []
@@ -140,7 +140,26 @@ class Map:
     
     def get_resources(self):
         return self.resources 
-
+# 
+# class Unit:
+#     def __init__(self, id, can_attack, x, y):
+#         self.id = id
+#         self.can_attack = can_attack
+#         self.x = x
+#         self.y = y
+#         
+#     def get_location(self):
+#         return (self.x, self.y)
+#     
+#     def set_location(self, x, y):
+#         self.x = x
+#         self.y = y
+# 
+#     def set_can_attack(self, can_attack):
+#         self.can_attack = can_attack
+#     
+#     def get_can_attack(self):
+#         return self.can_attack
 
 class Game:
     def __init__(self):
@@ -148,16 +167,18 @@ class Game:
         self.directions = ['N', 'S', 'E', 'W']
         self.map = Map()
         self.first_turn = True
+        self.tanks = {}
         self.workers = set() # set of unique worker ids
         self.worker_info = {}
         self.commands = queue.Queue()
         self.nearest_id = -1
-
+        
     def update(self, json_data):
         self.update_map(json_data)
         self.move_workers(json_data)
         self.create_units(json_data)
     
+
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
         self.units |= units # add any additional ids we encounter
@@ -179,15 +200,6 @@ class Game:
                     resource_id = update_tile["resources"]["id"]
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
         #self.map.print_map_data()        
-
-    def get_nearest_resource(self):
-        resources = self.map.get_resources()
-        nearest = -1
-        for resource in resources:
-            next_dist = len(self.map.path( (0, 0), resources[resource] ))
-            if (nearest == -1) or (next_dist < nearest):
-                nearest = next_dist
-                self.nearest_id = resource
 
     def move_workers(self, json_data):
         # get list of resources (from map)
@@ -223,11 +235,12 @@ class Game:
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
+
     def create_units(self, json_data):
         # get list of existing units, and count their types
         num_workers = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
         num_tanks = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'tank']))
-        num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
+        num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'scout']))
         
         # get queue of units to create
         create_queue = Queue()
@@ -254,6 +267,18 @@ class Game:
         command = {"commands": commands}
         response = json.dumps(command, separators=(',',':')) + '\n'
         return response
+    
+    def update_tanks(self, json_data):
+        for i in range(len(json_data['unit_updates'])):
+            if(json_data['unit_updates'][i]['type'] == "tank"):
+                unit_id = json_data['unit_updates'][i]['id']
+                can_attack = json_data['unit_updates'][i]['can_attack']
+                x = json_data['unit_updates'][i]['x']
+                y = json_data['unit_updates'][i]['y']
+                self.tanks[unit] = (x, y, can_attack)
+        
+        
+        
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
