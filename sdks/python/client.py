@@ -20,7 +20,7 @@ class NetworkHandler(ss.StreamRequestHandler):
             json_data = json.loads(str(data))
             # uncomment the following line to see pretty-printed data
             print(json.dumps(json_data, indent=4, sort_keys=True))
-            game.get_calc_move(json_data)
+            game.update_map(json_data)
             print("Turn " + str(json_data["turn"]) + " complete")
             response = game.get_random_move(json_data).encode()
             self.wfile.write(response)
@@ -30,6 +30,7 @@ class Map:
     def __init__(self):
         self.width = -1
         self.height = -1
+        self.resources = {}
     def create_map(self, map_width, map_height):
         self.width = map_width * 2 
         self.height = map_height * 2 
@@ -43,6 +44,7 @@ class Map:
             state = -4
         elif( resource != -1 ):
             state = resource
+            self.resources[resource] = (tilex, tiley)
         elif( blocked == True ):
             state = -3
         else:
@@ -56,6 +58,9 @@ class Map:
             for x in range(self.width) :
                print("[" + str(self.grid[x][y]) + "] ", end='')
             print()
+    
+    def get_resources(self)
+        return self.resources 
 
 
 class Game:
@@ -64,6 +69,8 @@ class Game:
         self.directions = ['N', 'S', 'E', 'W']
         self.map = Map()
         self.first_turn = True
+        self.workers = set() # set of unique worker ids
+        self.worker_info = {}
 
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -75,7 +82,7 @@ class Game:
         response = json.dumps(command, separators=(',',':')) + '\n'
         return response
     
-    def get_calc_move(self, json_data):
+    def update_map(self, json_data):
         if( self.first_turn ):
             self.map.create_map(json_data["game_info"]["map_width"], json_data["game_info"]["map_height"])
             self.first_turn = False
@@ -87,6 +94,28 @@ class Game:
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
         self.map.print_map_data()
 
+    def move_workers(self, json_data):
+        # get list of resources (from map)
+        resources = self.map.get_resources()
+
+        # get list of workers (from json) 
+        workers = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker'])
+        self.workers |= workers # add any additional ids we encounter
+        
+        # if worker is assigned to a resource, send it to that resource
+        for( resource_id in resources):
+            for(worker in worker_info):
+                #worker is a tuple (assignment, returning)
+                assignment = worker[0]
+                returning = worker[1]
+                if( assignment == resource_id and not( returning )):
+                    # send worker to resource
+
+                    
+                
+
+        # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
+        # if not, explore
 
     
 
