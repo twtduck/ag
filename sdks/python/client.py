@@ -148,8 +148,9 @@ class Game:
         self.first_turn = True
         self.workers = set() # set of unique worker ids
         self.worker_info = {}
-        self.commands = Queue()
-
+        self.commands = queue.Queue()
+        self.nearest_id = -1
+    
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
         self.units |= units # add any additional ids we encounter
@@ -172,6 +173,15 @@ class Game:
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
         self.map.print_map_data()        
 
+    def get_nearest_resource(self):
+        resources = self.map.get_resources()
+        nearest = -1
+        for resource in resources:
+            next_dist = len(self.map.path( (0, 0), resources[resource] ))
+            if (nearest == -1) or (next_dist < nearest):
+                nearest = next_dist
+                self.nearest_id = resource
+
     def move_workers(self, json_data):
         # get list of resources (from map)
         resources = self.map.get_resources()
@@ -181,14 +191,25 @@ class Game:
         self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
-        for resource_id in resources:
-            for worker in worker_info:
-                #worker is a tuple (assignment, returning)
-                assignment = worker[0]
-                returning = worker[1]
-                if( assignment == resource_id and not( returning )):
-                    # send worker to resource
-                    pass
+
+        for worker in workers:
+            #worker is a tuple (assignment, returning)
+            if worker not in worker_info:
+                worker_info[worker] = (False, self.map.path( (worker[x], worker[y]), resources[self.nearest_id]))  # (target_resource, returning_to_base, path)
+            (returning, path) = worker_info[worker]
+            if( not returning ):
+                # send worker to resource
+                next_dir = path.pop(0)
+                if (len(path) == 0):
+                    # Gather
+                    self.commands.push('command: "GATHER", unit: { worker }, dir: { next_dir }')
+                    # Update list to return 
+                    new_path = self.map.path( (worker[x], worker[y]), (0, 0) )
+                    worker_info[worker] = (True, new_path)
+                else:
+                    # Move 
+                    self.commands.push('command: "MOVE", unit: { worker }, dir: { next_dir }')
+
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
