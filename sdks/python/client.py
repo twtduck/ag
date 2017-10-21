@@ -3,7 +3,7 @@
 import sys
 import json
 import random
-import queue
+import heapq
 
 if (sys.version_info > (3, 0)):
     print("Python 3.X detected")
@@ -16,7 +16,7 @@ class NetworkHandler(ss.StreamRequestHandler):
     def handle(self):
         game = Game()
 
-        while True:	
+        while True:
             data = self.rfile.readline().decode() # reads until '\n' encountered
             json_data = json.loads(str(data))
             # uncomment the following line to see pretty-printed data
@@ -26,18 +26,89 @@ class NetworkHandler(ss.StreamRequestHandler):
             response = game.get_random_move(json_data).encode()
             self.wfile.write(response)
 
+class PriorityQueue:
+    def __init__(self):
+        self.elements = []
+    
+    def empty(self):
+        return len(self.elements) == 0
+    
+    def put(self, item, priority):
+        heapq.heappush(self.elements, (priority, item))
+    
+    def get(self):
+        return heapq.heappop(self.elements)[1]
+
 class Map:
 
     def __init__(self):
         self.width = -1
         self.height = -1
         self.resources = {}
+
     def create_map(self, map_width, map_height):
         self.width = map_width * 2 
         self.height = map_height * 2 
         # Initialize map with unknown for all tiles
         self.grid = [[-2 for x in range(self.width)] for y in range(self.height)]
 
+    def neighbors(self, position):
+        (x, y) = position
+        results = [(x+1, y), (x, y-1), (x-1, y), (x, y+1)]
+        if (x + y) % 2 == 0: results.reverse() # aesthetics
+        results = filter(self.in_bounds, results)
+        results = filter(self.passable, results)
+        return results
+
+    def heuristic(self, a, b):
+        (x1, y1) = a
+        (x2, y2) = b
+        return abs(x1 - x2) + abs(y1 - y2)
+
+    # A* Path finding from start to goal. Returns an array of directions to get there. 
+    def path(self, start, goal):
+        frontier = PriorityQueue()
+        frontier.put(start, 0)
+        came_from = {}
+        cost_so_far = {}
+        came_from[start] = None
+        cost_so_far[start] = 0
+        
+        while not frontier.empty():
+            current = frontier.get()
+            
+            if current == goal:
+                break
+            
+            for next in graph.neighbors(current):
+                # Check if neighbor position is passable
+                if (self.grid[next[0]][next[1]] != -1):
+                    continue
+                new_cost = cost_so_far[current] + 1
+                if next not in cost_so_far or new_cost < cost_so_far[next]:
+                    cost_so_far[next] = new_cost
+                    priority = new_cost + heuristic(goal, next)
+                    frontier.put(next, priority)
+                    came_from[next] = current
+        
+        current = goal
+        path = [current]
+        while current != start:
+            current = came_from[current]
+            path.append(current)
+        path.append(start)
+        path.reverse()
+        return path
+
+def reconstruct_path(came_from, start, goal):
+    current = goal
+    path = [current]
+    while current != start:
+        current = came_from[current]
+        path.append(current)
+    path.append(start) # optional
+    path.reverse() # optional
+    return path
 
     def add_tile(self, tilex, tiley, blocked, resource, enemies):
         state = -2
@@ -52,6 +123,7 @@ class Map:
             # Passable
             state = -1
         self.grid[tilex + self.width // 2][tiley + self.height // 2] = state
+
     def print_map_data(self):
         print("Map width: " + str(self.width))
         print("Map height: " + str(self.height))
@@ -60,7 +132,7 @@ class Map:
                print("[" + str(self.grid[x][y]) + "] ", end='')
             print()
     
-    def get_resources(self)
+    def get_resources(self):
         return self.resources 
 
 
@@ -72,7 +144,6 @@ class Game:
         self.first_turn = True
         self.workers = set() # set of unique worker ids
         self.worker_info = {}
-        self.commands = Queue()
 
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -94,7 +165,7 @@ class Game:
                 if( update_tile["resources"] != None ):
                     resource_id = update_tile["resources"]["id"]
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
-        self.map.print_map_data()
+        self.map.print_map_data()        
 
     def move_workers(self, json_data):
         # get list of resources (from map)
@@ -105,52 +176,22 @@ class Game:
         self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
-        for( resource_id in resources):
+        for(resource_id in resources):
             for(worker in worker_info):
                 #worker is a tuple (assignment, returning)
                 assignment = worker[0]
                 returning = worker[1]
                 if( assignment == resource_id and not( returning )):
                     # send worker to resource
-                    
+
                     
                 
 
         # otherwise, check if there is a resource that the worker is nearby that doesn't have a worker assigned to it
         # if not, explore
 
-    def create_units(self, json_data):
-        # get list of existing units, and count their types
-        num_workers = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
-        num_tanks = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'tank']))
-        num_scouts = len(set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker']))
-        
-        # get queue of units to create
-        create_queue = Queue()
-        while (num_workers < 6):
-            create_queue.push("worker")
-            num_workers += 1
-        while (num_scouts < 2):
-            create_queue.push("scout")
-            num_scouts += 1
-        while (num_tanks < 3):
-            create_queue.push("tank")
-            num_tanks += 1
-        while (num_workers < 9):
-            create_queue.push("worker")
-            num_workers += 1
-            
-        # send that queue to the server
-        self.commands.push("command: \"CREATE\", type: \"" + create_queue.pop() + "\"")
-            
-    def get_commands(self):
-        commands = []
-        while(not(self.commands.empty())):
-            commands.append({commands.pop()})
-        command = {"commands": commands}
-        response = json.dumps(command, separators=(',',':')) + '\n'
-        return response
     
+
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
     host = '127.0.0.1'
