@@ -21,10 +21,12 @@ class NetworkHandler(ss.StreamRequestHandler):
             data = self.rfile.readline().decode() # reads until '\n' encountered
             json_data = json.loads(str(data))
             # uncomment the following line to see pretty-printed data
-            print(json.dumps(json_data, indent=4, sort_keys=True))
-            game.update_map(json_data)
+            #print(json.dumps(json_data, indent=4, sort_keys=True))
+            game.update(json_data)
+#            game.update_map(json_data)
             print("Turn " + str(json_data["turn"]) + " complete")
-            response = game.get_random_move(json_data).encode()
+            #response = game.get_random_move(json_data).encode()
+            response = game.get_commands().encode()
             self.wfile.write(response)
 
 class PriorityQueue:
@@ -150,6 +152,11 @@ class Game:
         self.worker_info = {}
         self.commands = queue.Queue()
         self.nearest_id = -1
+
+    def update(self, json_data):
+        self.update_map(json_data)
+        self.move_workers(json_data)
+        self.create_units(json_data)
     
     def get_random_move(self, json_data):
         units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
@@ -171,7 +178,7 @@ class Game:
                 if( update_tile["resources"] != None ):
                     resource_id = update_tile["resources"]["id"]
                 self.map.add_tile(update_tile["x"], update_tile["y"], update_tile["blocked"], resource_id, update_tile["units"])
-        self.map.print_map_data()        
+        #self.map.print_map_data()        
 
     def get_nearest_resource(self):
         resources = self.map.get_resources()
@@ -188,13 +195,16 @@ class Game:
 
         # get list of workers (from json) 
         workers = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] == 'worker'])
+        print("\n\n\n\n\n\n\n")
+        print("Workers: ", workers)
+
         self.workers |= workers # add any additional ids we encounter
         
         # if worker is assigned to a resource, send it to that resource
 
-        for worker in workers:
+        for worker in self.workers:
             #worker is a tuple (assignment, returning)
-            if worker not in worker_info:
+            if worker not in self.worker_info:
                 worker_info[worker] = (False, self.map.path( (worker[x], worker[y]), resources[self.nearest_id]))  # (target_resource, returning_to_base, path)
             (returning, path) = worker_info[worker]
             if( not returning ):
